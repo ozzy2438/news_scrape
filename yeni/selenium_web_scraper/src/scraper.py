@@ -11,6 +11,7 @@ import sys
 import time
 import json
 from datetime import datetime
+from urllib.parse import quote
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config.config import Config
@@ -52,40 +53,31 @@ class WebScraper:
 
     def wait_for_page_load(self):
         try:
-            # Wait for initial page load
             time.sleep(5)
-            
-            # Print page source for debugging
             page_source = self.driver.page_source
             self.logger.info(f"Page source length: {len(page_source)}")
             
-            # Print all elements with class containing 'Pagination'
             elements = self.driver.find_elements(By.CSS_SELECTOR, "[class*='Pagination']")
             self.logger.info(f"Found {len(elements)} pagination elements")
             for elem in elements:
                 self.logger.info(f"Pagination element class: {elem.get_attribute('class')}")
             
-            # Print all elements with class containing 'Hit'
             hits = self.driver.find_elements(By.CSS_SELECTOR, "[class*='Hit']")
             self.logger.info(f"Found {len(hits)} hit elements")
             for hit in hits:
                 self.logger.info(f"Hit element class: {hit.get_attribute('class')}")
             
-            # Switch to the main window if multiple windows exist
             if len(self.driver.window_handles) > 0:
                 self.driver.switch_to.window(self.driver.window_handles[-1])
             
-            # Wait for body element
             WebDriverWait(self.driver, 10).until(
                 EC.presence_of_element_located((By.TAG_NAME, "body"))
             )
             
-            # Wait for page to be fully loaded
             WebDriverWait(self.driver, 10).until(
                 lambda driver: driver.execute_script("return document.readyState") == "complete"
             )
             
-            # Wait for any dynamic content
             time.sleep(2)
             
             return True
@@ -95,22 +87,16 @@ class WebScraper:
 
     def scroll_page(self):
         try:
-            # Get initial height
             last_height = self.driver.execute_script("return document.body.scrollHeight")
             
             while True:
-                # Scroll down gradually
                 for i in range(10):
                     self.driver.execute_script(f"window.scrollTo(0, {(i+1) * last_height/10});")
                     time.sleep(0.2)
                 
-                # Wait for content to load
                 time.sleep(2)
-                
-                # Calculate new scroll height
                 new_height = self.driver.execute_script("return document.body.scrollHeight")
                 
-                # Break if no more content
                 if new_height == last_height:
                     break
                     
@@ -123,21 +109,16 @@ class WebScraper:
 
     def extract_articles(self):
         try:
-            # Wait for articles to load
             time.sleep(3)
-            
-            # Find all article elements with the search hit class
             articles = self.driver.find_elements(By.CLASS_NAME, "_searchHit_qg6i7_1")
             self.logger.info(f"Found {len(articles)} articles")
             
             for article in articles:
                 try:
-                    # Extract article data
                     link_elem = article.find_element(By.TAG_NAME, "a")
                     title = link_elem.text.strip()
                     url = link_elem.get_attribute("href")
                     
-                    # Only add if we have both title and URL
                     if title and url:
                         self.articles.append({
                             "title": title,
@@ -157,18 +138,14 @@ class WebScraper:
 
     def click_next_page(self, page_number):
         try:
-            # Wait for pagination to be present
             time.sleep(3)
-            
-            # Find the next page number link
             next_page = str(page_number + 1)
             
-            # Look for the page number element
             xpath_expressions = [
-                f"//a[text()='{next_page}']",  # Direct number match
-                f"//button[text()='{next_page}']",  # Button with number
-                f"//span[text()='{next_page}']/parent::a",  # Number within span
-                f"//div[contains(@class, 'pagination')]//a[text()='{next_page}']"  # Within pagination div
+                f"//a[text()='{next_page}']",
+                f"//button[text()='{next_page}']",
+                f"//span[text()='{next_page}']/parent::a",
+                f"//div[contains(@class, 'pagination')]//a[text()='{next_page}']"
             ]
             
             for xpath in xpath_expressions:
@@ -178,20 +155,16 @@ class WebScraper:
                     
                     for element in elements:
                         if element.is_displayed():
-                            # Scroll element into view
-                            self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});")
+                            self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
                             time.sleep(1)
                             
-                            # Try clicking
                             try:
                                 element.click()
                             except:
                                 self.driver.execute_script("arguments[0].click();", element)
                             
-                            # Wait for page to load
                             time.sleep(2)
                             
-                            # Verify page changed by checking URL or content
                             if self.verify_page_changed():
                                 self.logger.info(f"Successfully navigated to page {next_page}")
                                 return True
@@ -208,13 +181,8 @@ class WebScraper:
 
     def verify_page_changed(self):
         try:
-            # Wait for new content to load
             time.sleep(2)
-            
-            # Get current articles
             current_articles = self.driver.find_elements(By.CLASS_NAME, "_searchHit_qg6i7_1")
-            
-            # Check if we have articles
             return len(current_articles) > 0
             
         except Exception as e:
@@ -226,10 +194,8 @@ class WebScraper:
             if not self.articles:
                 raise Exception("No data to save")
                 
-            # Create output directory if it doesn't exist
             os.makedirs(os.path.dirname(filename), exist_ok=True)
             
-            # Save to CSV
             df = pd.DataFrame(self.articles)
             df.to_csv(filename, index=False)
             self.logger.info(f"Saved {len(self.articles)} articles to {filename}")
@@ -237,11 +203,16 @@ class WebScraper:
         except Exception as e:
             self.logger.error(f"Save error: {str(e)}")
 
-    def run_scraper(self, url, output_name, max_pages=10):
+    def run_scraper(self, output_name="output/abc_news_articles.csv", max_pages=10):
         try:
+            # Construct URL with the query from input
+            base_url = "https://discover.abc.net.au/index.html?siteTitle=news#/"
+            query = quote(input("\nEnter your search query: ").strip())
+            url = f"{base_url}?query={query}&refinementList%5Bsite.title%5D%5B0%5D=ABC%20News"
+            
             # Navigate to URL
             self.driver.get(url)
-            self.logger.info("Navigated to URL")
+            self.logger.info(f"Navigating to URL with query: {query}")
             
             # Wait for initial page load
             if not self.wait_for_page_load():
@@ -250,11 +221,9 @@ class WebScraper:
             page = 1
             while page <= max_pages:
                 try:
-                    # Extract articles from current page
                     self.logger.info(f"Extracting page {page}")
                     self.extract_articles()
                     
-                    # Try to go to next page if not on last page
                     if page < max_pages:
                         if not self.click_next_page(page):
                             self.logger.info("No more pages available")
@@ -278,7 +247,4 @@ class WebScraper:
 
 if __name__ == "__main__":
     scraper = WebScraper()
-    scraper.run_scraper(
-        url="https://discover.abc.net.au/index.html?siteTitle=news#/?query=global&refinementList%5Bsite.title%5D%5B0%5D=ABC%20News",
-        output_name="abc_news_articles.csv"
-    )
+    scraper.run_scraper()
