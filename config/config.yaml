@@ -1,0 +1,19 @@
+# Browser Configuration
+headless: false
+timeout: 15
+
+# Output Configuration
+output_dir: output
+
+# Scraping Configuration
+max_pages: 10
+wait_time: 3
+
+# CSS Selectors
+selectors:
+  article_item: "ais-Hits-item"
+  title: "hit-title"
+  description: "hit-description"
+  date: "hit-published-date"
+  link: "hit-link"
+  next_page: "ais-Pagination-link"
